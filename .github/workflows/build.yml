@@ -1,0 +1,101 @@
+name: Build ebook-fit-to-height
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*.*.*']
+  pull_request:
+    branches: ['**']
+
+env:
+  XOVI_TAG: v0.3.3
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: eeems/remarkable-toolchain:5.8.203-aarch64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download xovi source
+        run: |
+          curl -L -o xovi.tar.gz \
+            "https://github.com/asivery/xovi/archive/refs/tags/$XOVI_TAG.tar.gz"
+          tar -xzf xovi.tar.gz
+          mv xovi-* xovi-repo
+          rm xovi.tar.gz
+
+      - name: Build aarch64
+        shell: bash
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          . "$(find /opt/codex/chiappa -name 'environment-setup-*' -type f | head -n1)"
+          make ebook-fit-to-height.so \
+            CC_AARCH64="$CC" \
+            XOVI_REPO="$GITHUB_WORKSPACE/xovi-repo" \
+            VERSION="$VERSION"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebook-fit-to-height
+          path: ebook-fit-to-height.so
+          retention-days: 90
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        uses: taiki-e/install-action@git-cliff
+
+      - name: Generate changelog
+        run: |
+          git cliff --config-url https://gist.githubusercontent.com/rmitchellscott/823c46de7a1c3e6d57e9de90ee00d84a/raw/cliff.toml \
+            --latest --strip header | tail -n +2 > RELEASE_NOTES.md
+          git cliff --config-url https://gist.githubusercontent.com/rmitchellscott/823c46de7a1c3e6d57e9de90ee00d84a/raw/cliff.toml > CHANGELOG.md
+
+      - name: Add device compatibility info
+        run: |
+          cat >> RELEASE_NOTES.md << 'EOF'
+
+          ## Device Compatibility
+
+          - **reMarkable Paper Pro Move**: `ebook-fit-to-height.so`
+          EOF
+
+      - name: Commit changelog
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          if git diff --staged --quiet; then
+            echo "No changelog changes to commit"
+          else
+            git commit -m "chore(release): update changelog for ${{ github.ref_name }} [skip ci]"
+            git push origin HEAD:main
+          fi
+
+      - name: Download aarch64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ebook-fit-to-height
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ebook-fit-to-height.so
+          body_path: RELEASE_NOTES.md
