@@ -17,7 +17,7 @@ This extension restores the 3.27 view: ebooks fit the screen height. Nothing is 
 ### Vellum
 
 ```
-vellum add fix-ebook-view-on-move
+vellum add ebook-fit-to-height
 ```
 
 ### Manual
