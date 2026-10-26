@@ -18,17 +18,16 @@
 //   scale = min(widthRatio, heightRatio)
 // 3.27 always scaled ebooks by the view height, so the fit branch is made unconditional
 static const uint32_t ebookFitInstructions[] = {
-    0x1e691808, // fdiv  d8, d0, d9
-    0x1e6a1821, // fdiv  d1, d1, d10
-    0x1e612110, // fcmpe d8, d1
-    0x5400016c, // b.gt  use_height_ratio
-    0x6d4a87e0, // ldp   d0, d1, [sp, #168]
-    0x1e6c1002, // fmov  d2, #0.5
-    0x1f420120, // fmadd d0, d9, d2, d0
-    0x1f420541, // fmadd d1, d10, d2, d1
+    0x1e7d1bff, // fdiv  d31, d31, d29
+    0x1e7c1842, // fdiv  d2, d2, d28
+    0x1f5a7ba0, // fmadd d0, d29, d26, d30
+    0x1f5a6f81, // fmadd d1, d28, d26, d27
+    0x1e6223f0, // fcmpe d31, d2
+    0x1e7fcc42, // fcsel d2, d2, d31, gt
 };
 #define EBOOK_FIT_INSTRUCTION_COUNT (sizeof(ebookFitInstructions) / sizeof(ebookFitInstructions[0]))
-#define CHOOSE_HEIGHT_RATIO_BRANCH_INDEX 3
+#define SELECT_SCALE_INDEX 5
+#define NOP_INSTRUCTION 0xd503201f
 
 struct CodeRange {
     uint8_t *start;
@@ -82,12 +81,6 @@ static uint32_t *findUniqueEbookFit(const struct CodeRange *code, int *matchCoun
     return *matchCount == 1 ? match : NULL;
 }
 
-static uint32_t unconditionalBranchFrom(uint32_t conditionalBranch)
-{
-    int32_t offsetInInstructions = (int32_t)(conditionalBranch << 8) >> 13;
-    return 0x14000000 | ((uint32_t)offsetInInstructions & 0x03ffffff);
-}
-
 static int writeInstruction(uint32_t *location, uint32_t instruction)
 {
     uintptr_t pageSize = (uintptr_t)sysconf(_SC_PAGESIZE);
@@ -125,8 +118,7 @@ void _xovi_construct(void)
         return;
     }
 
-    uint32_t *chooseHeightRatio = ebookFit + CHOOSE_HEIGHT_RATIO_BRANCH_INDEX;
-    if (!writeInstruction(chooseHeightRatio, unconditionalBranchFrom(*chooseHeightRatio))) {
+    if (!writeInstruction(ebookFit + SELECT_SCALE_INDEX, NOP_INSTRUCTION)) {
         fprintf(stderr, LOG_PREFIX " could not make xochitl code writable, staying inactive\n");
         return;
     }
